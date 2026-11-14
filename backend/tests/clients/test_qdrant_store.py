@@ -48,3 +48,8 @@ def test_upsert_is_idempotent_and_ensure_collection_repeatable(store):
 def test_mismatched_lengths_raise(store):
     with pytest.raises(ValueError):
         store.upsert_chunks(1, [ChunkRecord(1, 0, "a")], [])
+
+
+def test_empty_chunks_raise_clear_error(store):
+    with pytest.raises(ValueError, match="requires at least one chunk"):
+        store.upsert_chunks(1, [], [])

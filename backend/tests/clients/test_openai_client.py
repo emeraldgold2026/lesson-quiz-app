@@ -83,3 +83,9 @@ def test_refusal_raises_clear_error():
     stub = StubOpenAI(parsed=None, refusal="no")
     with pytest.raises(RuntimeError, match="no parsed FreeTextVerdict"):
         OpenAIClient(api_key="k", client=stub).grade_free_text("q", "a", "r", [])
+
+
+def test_embed_empty_returns_empty_without_calling_api():
+    stub = StubOpenAI()
+    assert OpenAIClient(api_key="k", client=stub).embed([]) == []
+    assert stub.calls == []

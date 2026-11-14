@@ -31,6 +31,8 @@ class QdrantStore:
 
     def upsert_chunks(self, lesson_id: int, chunks: list[ChunkRecord],
                       vectors: list[list[float]]) -> None:
+        if not chunks:
+            raise ValueError("upsert_chunks requires at least one chunk")
         if len(chunks) != len(vectors):
             raise ValueError(f"{len(chunks)} chunks but {len(vectors)} vectors")
         self.ensure_collection()

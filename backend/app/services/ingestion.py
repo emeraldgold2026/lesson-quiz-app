@@ -37,6 +37,8 @@ def run_ingestion(lesson_id: int, *, session_factory, ai: AIClient, store: Vecto
             session.flush()
 
             chunks = chunk_pages([(p.page_order, p.extracted_text) for p in lesson.pages])
+            if not chunks:
+                raise ValueError("no text could be extracted from the uploaded pages")
             vectors = ai.embed([c.text for c in chunks])
             store.upsert_chunks(lesson_id, chunks, vectors)
 

@@ -56,3 +56,15 @@ def test_after_ingest_failure_also_marks_failed(session_factory, fake_store, tmp
                   upload_dir=str(tmp_path), after_ingest=boom)
     with session_factory() as s:
         assert s.get(Lesson, lid).status == "failed"
+
+
+def test_no_extractable_text_marks_failed_with_clear_message(session_factory, fake_store, tmp_path):
+    lid = _seed(session_factory, tmp_path)
+    run_ingestion(lid, session_factory=session_factory, ai=FakeAI(page_texts=["   ", ""]),
+                  store=fake_store, upload_dir=str(tmp_path), after_ingest=lambda s, l: None)
+    with session_factory() as s:
+        lesson = s.get(Lesson, lid)
+        assert lesson.status == "failed"
+        assert "no text could be extracted" in lesson.error_message
+    assert (tmp_path / str(lid)).exists()
+    assert lid not in fake_store.data

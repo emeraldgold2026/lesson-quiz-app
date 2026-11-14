@@ -1,4 +1,4 @@
-from app.db import Base, make_session_factory
+from app.db import make_session_factory
 from app.models import Lesson, LessonPage, Question, McqChoice
 
 

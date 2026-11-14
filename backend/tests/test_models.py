@@ -16,3 +16,22 @@ def test_lesson_with_pages_and_question_roundtrip():
         assert got.pages[0].extracted_text == "hello"
         assert got.questions[0].choices[0].is_correct is True
         assert got.created_at is not None
+
+
+def test_datetimes_roundtrip_as_utc_and_reject_naive():
+    from datetime import datetime, timedelta, timezone
+
+    import pytest
+    from sqlalchemy.exc import StatementError
+
+    sf = make_session_factory("sqlite://")
+    plus2 = timezone(timedelta(hours=2))
+    with sf() as s:
+        s.add(Lesson(title="A", status="ready", created_at=datetime(2026, 1, 1, 12, tzinfo=plus2)))
+        s.commit()
+    with sf() as s:
+        got = s.query(Lesson).one().created_at
+        assert got == datetime(2026, 1, 1, 10, tzinfo=timezone.utc) and got.tzinfo is timezone.utc
+        s.add(Lesson(title="B", status="ready", created_at=datetime(2026, 1, 1)))
+        with pytest.raises(StatementError, match="naive datetime"):
+            s.commit()

@@ -2,12 +2,34 @@ from datetime import datetime, timezone
 
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
 
 from app.db import Base
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class UTCDateTime(TypeDecorator):
+    """Aware datetimes stored as naive UTC and read back as UTC-aware.
+
+    SQLite has no timezone storage, so plain ``UTCDateTime`` comes back
+    naive and would serialise without an offset.
+    """
+
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            raise ValueError(f"naive datetime {value!r} cannot be stored; use an aware UTC value")
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+    def process_result_value(self, value: datetime | None, dialect) -> datetime | None:
+        return None if value is None else value.replace(tzinfo=timezone.utc)
 
 
 class Lesson(Base):
@@ -17,7 +39,7 @@ class Lesson(Base):
     status: Mapped[str] = mapped_column(String)  # processing/ready/failed
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     page_count: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=_now)
     pages: Mapped[list["LessonPage"]] = relationship(
         back_populates="lesson", order_by="LessonPage.page_order", cascade="all, delete-orphan")
     questions: Mapped[list["Question"]] = relationship(
@@ -41,7 +63,7 @@ class Question(Base):
     question_text: Mapped[str] = mapped_column(Text)
     explanation: Mapped[str] = mapped_column(Text)
     reference_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=_now)
     lesson: Mapped[Lesson] = relationship(back_populates="questions")
     choices: Mapped[list["McqChoice"]] = relationship(
         back_populates="question", order_by="McqChoice.order_index", cascade="all, delete-orphan")
@@ -62,8 +84,8 @@ class Attempt(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     lesson_id: Mapped[int] = mapped_column(ForeignKey("lessons.id"))
     test_type: Mapped[str] = mapped_column(String)  # mcq/free_text
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
-    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime, default=_now)
+    submitted_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     score: Mapped[float] = mapped_column(Float, default=0.0)
     total_questions: Mapped[int] = mapped_column(Integer, default=0)
     answers: Mapped[list["AttemptAnswer"]] = relationship(

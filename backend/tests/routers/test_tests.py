@@ -70,6 +70,20 @@ def test_free_text_grading_failure_persists_nothing(make_client, session_factory
     assert c.get(f"/lessons/{lid}/attempts").json() == []
 
 
+def test_timestamps_keep_utc_offset_after_db_roundtrip(make_client, session_factory, fake_store, tmp_path):
+    from datetime import datetime, timedelta
+    c, _, lid = ready(make_client, session_factory, fake_store, tmp_path)
+    qs = c.get(f"/lessons/{lid}/mcq-test").json()
+    aid = c.post(f"/lessons/{lid}/mcq-test/submit",
+                 json={"answers": {q["id"]: [] for q in qs}}).json()["id"]
+    attempt = c.get(f"/attempts/{aid}").json()
+    stamps = [c.get("/lessons").json()[0]["created_at"], c.get(f"/lessons/{lid}").json()["created_at"],
+              attempt["started_at"], attempt["submitted_at"],
+              c.get(f"/lessons/{lid}/attempts").json()[0]["submitted_at"]]
+    for s in stamps:
+        assert datetime.fromisoformat(s).utcoffset() == timedelta(0), s
+
+
 def test_tests_unavailable_until_ready(make_client, session_factory, fake_store, tmp_path):
     from tests.fakes import FakeAI
     c = make_client(session_factory, FakeAI(fail_on_page=0), fake_store, tmp_path)

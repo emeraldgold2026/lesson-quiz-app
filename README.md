@@ -66,7 +66,7 @@ cd frontend && npm test
 ## Known limits
 
 - Single user, no authentication.
-- Free-text grading is one LLM call per question and runs inside the request, so large tests are slow to submit.
+- Free-text grading is one LLM call per question, run inside the request with up to 8 questions graded at a time, so large tests can still take a while to submit.
 - Uploaded images are kept on disk only until ingestion succeeds; they are retained on failure so Retry works.
 - Ingestion runs inside the API process: on startup, any lesson still `processing` (for example after a `--reload` restart mid-ingestion) is marked `failed` with "Interrupted by a server restart; use Retry." Its uploads are kept, so Retry works. Run a single API process.
 - A lesson whose pages yield no text fails with a clear error.

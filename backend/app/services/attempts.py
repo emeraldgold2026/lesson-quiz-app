@@ -1,11 +1,14 @@
+from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
 from app.clients.protocols import AIClient, VectorStore
 from app.models import Attempt, AttemptAnswer, Lesson, Question
-from app.schemas import AnswerResultOut, AttemptOut, AttemptSummaryOut
+from app.schemas import AnswerResultOut, AttemptOut, AttemptSummaryOut, FreeTextVerdict
 from app.services.grading import grade_free_text, grade_mcq, points
+
+GRADING_WORKERS = 8  # concurrent LLM grading calls per free-text submission
 
 
 class SubmissionError(ValueError):
@@ -49,16 +52,36 @@ def submit_mcq(session: Session, lesson: Lesson, answers: dict[int, list[int]]) 
     return attempt
 
 
+def _detached(q: Question) -> Question:
+    """A session-less copy holding just what grading reads, safe to use from worker threads."""
+    return Question(id=q.id, lesson_id=q.lesson_id, type=q.type, question_text=q.question_text,
+                    explanation=q.explanation, reference_answer=q.reference_answer)
+
+
+def _grade_all(questions: list[Question], answers: dict[int, str], ai: AIClient,
+               store: VectorStore) -> list[FreeTextVerdict]:
+    """Grade concurrently; results follow question order. Any failure aborts the lot."""
+    plain = [_detached(q) for q in questions]
+    with ThreadPoolExecutor(max_workers=GRADING_WORKERS) as pool:
+        futures = [pool.submit(grade_free_text, q, answers[q.id], ai, store) for q in plain]
+        wait(futures, return_when=FIRST_EXCEPTION)
+        for q, f in zip(plain, futures):
+            if f.done() and f.exception() is not None:
+                for pending in futures:
+                    pending.cancel()
+                e = f.exception()
+                raise GradingUnavailable(
+                    f"grading failed for question {q.id}: {type(e).__name__}: {e}") from e
+        return [f.result() for f in futures]
+
+
 def submit_free_text(session: Session, lesson: Lesson, answers: dict[int, str],
                      ai: AIClient, store: VectorStore) -> Attempt:
     questions = questions_for(lesson, "free_text")
     _check_keys(questions, answers)
+    verdicts = _grade_all(questions, answers, ai, store)
     attempt = Attempt(lesson_id=lesson.id, test_type="free_text", total_questions=len(questions), score=0.0)
-    for q in questions:
-        try:
-            v = grade_free_text(q, answers[q.id], ai, store)
-        except Exception as e:
-            raise GradingUnavailable(f"grading failed for question {q.id}: {type(e).__name__}: {e}") from e
+    for q, v in zip(questions, verdicts, strict=True):
         attempt.score += points(v.verdict)
         attempt.answers.append(AttemptAnswer(
             question_id=q.id, student_response=answers[q.id], verdict=v.verdict,

@@ -100,6 +100,53 @@ def test_timestamps_keep_utc_offset_after_db_roundtrip(make_client, session_fact
         assert datetime.fromisoformat(s).utcoffset() == timedelta(0), s
 
 
+def _concurrent_ai(fail_on=None):
+    import threading
+    import time
+
+    from app.schemas import FreeTextVerdict
+    from tests.fakes import FakeAI
+
+    class ConcurrentAI(FakeAI):
+        barrier: threading.Barrier | None = None
+
+        def grade_free_text(self, question, student_answer, reference_answer, grounding):
+            if self.barrier is not None:
+                self.barrier.wait()  # only passes if every question is graded at once
+            if student_answer == fail_on:
+                raise RuntimeError("grader exploded")
+            time.sleep(0.05 / (1 + int(student_answer)))  # later questions finish first
+            return FreeTextVerdict(verdict="correct", feedback=f"fb {student_answer}")
+
+    return ConcurrentAI(page_texts=["word " * 2000])
+
+
+def test_free_text_grading_runs_concurrently_and_keeps_order(make_client, session_factory, fake_store, tmp_path):
+    import threading
+    ai = _concurrent_ai()
+    c, _, lid = ready(make_client, session_factory, fake_store, tmp_path, ai)
+    qs = c.get(f"/lessons/{lid}/free-text-test").json()
+    assert len(qs) > 1
+    ai.barrier = threading.Barrier(len(qs), timeout=5)
+    r = c.post(f"/lessons/{lid}/free-text-test/submit",
+               json={"answers": {q["id"]: str(i) for i, q in enumerate(qs)}})
+    assert r.status_code == 200, r.text
+    results = r.json()["results"]
+    assert [x["question_id"] for x in results] == [q["id"] for q in qs]
+    assert [x["feedback_text"] for x in results] == [f"fb {i}" for i in range(len(qs))]
+
+
+def test_free_text_single_grading_failure_persists_nothing(make_client, session_factory, fake_store, tmp_path):
+    ai = _concurrent_ai(fail_on="2")
+    c, _, lid = ready(make_client, session_factory, fake_store, tmp_path, ai)
+    qs = c.get(f"/lessons/{lid}/free-text-test").json()
+    r = c.post(f"/lessons/{lid}/free-text-test/submit",
+               json={"answers": {q["id"]: str(i) for i, q in enumerate(qs)}})
+    assert r.status_code == 502
+    assert f"question {qs[2]['id']}" in r.json()["detail"] and "grader exploded" in r.json()["detail"]
+    assert c.get(f"/lessons/{lid}/attempts").json() == []
+
+
 def test_tests_unavailable_until_ready(make_client, session_factory, fake_store, tmp_path):
     from tests.fakes import FakeAI
     c = make_client(session_factory, FakeAI(fail_on_page=0), fake_store, tmp_path)

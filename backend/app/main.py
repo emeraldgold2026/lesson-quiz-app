@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings
-from app.routers import lessons
+from app.routers import attempts, lessons, tests
 
 
 def create_app() -> FastAPI:
@@ -12,6 +12,8 @@ def create_app() -> FastAPI:
                        allow_methods=["*"], allow_headers=["*"])
 
     app.include_router(lessons.router)
+    app.include_router(tests.router)
+    app.include_router(attempts.router)
 
     @app.get("/health")
     def health():

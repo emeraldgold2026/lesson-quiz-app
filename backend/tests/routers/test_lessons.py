@@ -1,5 +1,8 @@
+import threading
+
 import pytest
 
+from app.db import make_session_factory
 from tests.fakes import FakeAI
 
 PNG = ("p.png", b"\x89PNG", "image/png")
@@ -46,3 +49,44 @@ def test_list_and_404(make_client, session_factory, fake_store, tmp_path):
     c = make_client(session_factory, FakeAI(), fake_store, tmp_path)
     assert c.get("/lessons").json() == []
     assert c.get("/lessons/999").status_code == 404
+
+
+class HoldingAI(FakeAI):
+    """Blocks the first generate_questions call until released, to model a slow LLM."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.generating = threading.Event()
+        self.release = threading.Event()
+        self._held = False
+
+    def generate_questions(self, section_text, n_mcq, n_free_text):
+        if not self._held:
+            self._held = True
+            self.generating.set()
+            assert self.release.wait(timeout=60), "test never released generation"
+        return super().generate_questions(section_text, n_mcq, n_free_text)
+
+
+def test_writes_succeed_while_another_lesson_is_generating(make_client, fake_store, tmp_path):
+    sf = make_session_factory(f"sqlite:///{tmp_path / 'app.db'}")
+    ai = HoldingAI()
+    c = make_client(sf, ai, fake_store, tmp_path / "uploads")
+    first: dict = {}
+
+    def upload_first():
+        first["resp"] = c.post("/lessons", data={"title": "A"}, files=[("files", PNG)])
+
+    t = threading.Thread(target=upload_first)
+    t.start()
+    try:
+        assert ai.generating.wait(timeout=10)
+        # A second upload (insert + its own full ingestion) must not hit "database is locked".
+        r2 = c.post("/lessons", data={"title": "B"}, files=[("files", PNG)])
+        assert r2.status_code == 202
+        assert c.get(f"/lessons/{r2.json()['id']}").json()["status"] == "ready"
+    finally:
+        ai.release.set()
+        t.join(timeout=30)
+    assert first["resp"].status_code == 202
+    assert c.get(f"/lessons/{first['resp'].json()['id']}").json()["status"] == "ready"

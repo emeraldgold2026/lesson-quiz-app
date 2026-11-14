@@ -1,4 +1,5 @@
 from app.models import Lesson, LessonPage
+from app.schemas import GeneratedQuestion
 from app.services.ingestion import run_ingestion, upload_path
 from tests.fakes import FakeAI
 
@@ -22,14 +23,22 @@ def test_success_extracts_chunks_marks_ready_and_deletes_uploads(session_factory
     lid = _seed(session_factory, tmp_path)
     ai = FakeAI(page_texts=["alpha text", "beta text"])
     called = []
+    question = GeneratedQuestion(type="free_text", question_text="Why?", explanation="e",
+                                 choices=[], reference_answer="r")
+
+    def after_ingest(texts):
+        called.append(texts)
+        return [question]
+
     run_ingestion(lid, session_factory=session_factory, ai=ai, store=fake_store,
-                  upload_dir=str(tmp_path), after_ingest=lambda s, l: called.append(l.id))
+                  upload_dir=str(tmp_path), after_ingest=after_ingest)
     with session_factory() as s:
         lesson = s.get(Lesson, lid)
         assert lesson.status == "ready" and lesson.error_message is None
         assert [p.extracted_text for p in lesson.pages] == ["alpha text", "beta text"]
+        assert [q.question_text for q in lesson.questions] == ["Why?"]
     assert fake_store.data[lid]
-    assert called == [lid]
+    assert called == [["alpha text", "beta text"]]
     assert not (tmp_path / str(lid)).exists()
 
 
@@ -37,7 +46,7 @@ def test_failure_marks_failed_keeps_uploads_and_clears_vectors(session_factory, 
     lid = _seed(session_factory, tmp_path)
     ai = FakeAI(fail_on_page=1)
     run_ingestion(lid, session_factory=session_factory, ai=ai, store=fake_store,
-                  upload_dir=str(tmp_path), after_ingest=lambda s, l: None)
+                  upload_dir=str(tmp_path), after_ingest=lambda texts: [])
     with session_factory() as s:
         lesson = s.get(Lesson, lid)
         assert lesson.status == "failed"
@@ -49,7 +58,7 @@ def test_failure_marks_failed_keeps_uploads_and_clears_vectors(session_factory, 
 def test_after_ingest_failure_also_marks_failed(session_factory, fake_store, tmp_path):
     lid = _seed(session_factory, tmp_path, 1)
 
-    def boom(s, l):
+    def boom(texts):
         raise ValueError("gen broke")
 
     run_ingestion(lid, session_factory=session_factory, ai=FakeAI(), store=fake_store,
@@ -61,7 +70,7 @@ def test_after_ingest_failure_also_marks_failed(session_factory, fake_store, tmp
 def test_no_extractable_text_marks_failed_with_clear_message(session_factory, fake_store, tmp_path):
     lid = _seed(session_factory, tmp_path)
     run_ingestion(lid, session_factory=session_factory, ai=FakeAI(page_texts=["   ", ""]),
-                  store=fake_store, upload_dir=str(tmp_path), after_ingest=lambda s, l: None)
+                  store=fake_store, upload_dir=str(tmp_path), after_ingest=lambda texts: [])
     with session_factory() as s:
         lesson = s.get(Lesson, lid)
         assert lesson.status == "failed"

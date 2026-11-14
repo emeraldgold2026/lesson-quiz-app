@@ -2,8 +2,8 @@ import pytest
 
 from app.models import Lesson, LessonPage
 from app.schemas import GeneratedBatch, GeneratedChoice, GeneratedQuestion
-from app.services.generation import (allocate, generate_questions_for_lesson,
-                                     make_sections, question_targets)
+from app.services.generation import (allocate, make_sections, plan_questions,
+                                     question_targets, store_questions)
 from tests.fakes import FakeAI
 
 
@@ -37,9 +37,11 @@ def _lesson(session, texts):
 
 def test_generates_and_persists_questions(session_factory):
     ai = FakeAI()
+    texts = [" ".join(["word"] * 1800)]
+    planned = plan_questions(texts, ai)
     with session_factory() as s:
-        lesson = _lesson(s, [" ".join(["word"] * 1800)])
-        generate_questions_for_lesson(s, lesson, ai)
+        lesson = _lesson(s, texts)
+        store_questions(s, lesson, planned)
         s.commit()
         n_mcq, n_free = question_targets(1800)
         types = [q.type for q in lesson.questions]
@@ -47,6 +49,19 @@ def test_generates_and_persists_questions(session_factory):
         assert sum(c[1] for c in ai.generate_calls) == n_mcq
         free = next(q for q in lesson.questions if q.type == "free_text")
         assert free.reference_answer
+        mcq = next(q for q in lesson.questions if q.type == "mcq_single")
+        assert [(c.choice_text, c.is_correct, c.order_index) for c in mcq.choices] == [
+            ("right", True, 0), ("wrong", False, 1)]
+
+
+def test_store_questions_replaces_existing(session_factory):
+    planned = plan_questions(["some words here"], FakeAI())
+    with session_factory() as s:
+        lesson = _lesson(s, ["some words here"])
+        store_questions(s, lesson, planned)
+        store_questions(s, lesson, planned[:1])
+        s.commit()
+        assert len(s.get(Lesson, lesson.id).questions) == 1
 
 
 class BadAI(FakeAI):
@@ -61,8 +76,6 @@ class BadAI(FakeAI):
                       choices=[GeneratedChoice(text="a", is_correct=True), GeneratedChoice(text="b", is_correct=True)]),
     GeneratedQuestion(type="free_text", question_text="q", explanation="e"),
 ])
-def test_invalid_llm_output_raises(session_factory, q):
-    with session_factory() as s:
-        lesson = _lesson(s, ["some words here"])
-        with pytest.raises(ValueError):
-            generate_questions_for_lesson(s, lesson, BadAI(q))
+def test_invalid_llm_output_raises(q):
+    with pytest.raises(ValueError):
+        plan_questions(["some words here"], BadAI(q))

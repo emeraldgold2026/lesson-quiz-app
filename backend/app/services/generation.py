@@ -54,23 +54,31 @@ def _validate(q: GeneratedQuestion) -> None:
         raise ValueError(f"{q.type} has {correct} correct choices: {q.question_text!r}")
 
 
-def generate_questions_for_lesson(session: Session, lesson: Lesson, ai: AIClient) -> None:
-    lesson.questions.clear()
-    session.flush()
-    texts = [p.extracted_text or "" for p in lesson.pages]
-    sections = make_sections(texts)
+def plan_questions(page_texts: list[str], ai: AIClient) -> list[GeneratedQuestion]:
+    """Call the LLM per section and return validated questions. Touches no database."""
+    sections = make_sections(page_texts)
     words = [len(s.split()) for s in sections]
     n_mcq, n_free = question_targets(sum(words))
     mcq_alloc, free_alloc = allocate(n_mcq, words), allocate(n_free, words)
 
+    planned: list[GeneratedQuestion] = []
     for section, m, f in zip(sections, mcq_alloc, free_alloc):
         if m == 0 and f == 0:
             continue
         for gq in ai.generate_questions(section, m, f).questions:
             _validate(gq)
-            q = Question(type=gq.type, question_text=gq.question_text,
-                         explanation=gq.explanation, reference_answer=gq.reference_answer)
-            q.choices = [McqChoice(choice_text=c.text, is_correct=c.is_correct, order_index=i)
-                         for i, c in enumerate(gq.choices)]
-            lesson.questions.append(q)
+            planned.append(gq)
+    return planned
+
+
+def store_questions(session: Session, lesson: Lesson, questions: list[GeneratedQuestion]) -> None:
+    """Replace the lesson's questions; the caller owns the (short) transaction."""
+    lesson.questions.clear()
+    session.flush()
+    for gq in questions:
+        q = Question(type=gq.type, question_text=gq.question_text,
+                     explanation=gq.explanation, reference_answer=gq.reference_answer)
+        q.choices = [McqChoice(choice_text=c.text, is_correct=c.is_correct, order_index=i)
+                     for i, c in enumerate(gq.choices)]
+        lesson.questions.append(q)
     session.flush()

@@ -9,7 +9,7 @@ from app.config import Settings
 from app.deps import get_ai, get_session, get_session_factory, get_settings, get_store
 from app.models import Lesson, LessonPage
 from app.schemas import LessonOut
-from app.services.generation import generate_questions_for_lesson
+from app.services.generation import plan_questions
 from app.services.ingestion import run_ingestion, upload_path
 
 router = APIRouter(prefix="/lessons", tags=["lessons"])
@@ -32,7 +32,7 @@ def _get_or_404(session: Session, lesson_id: int) -> Lesson:
 def _schedule(bg: BackgroundTasks, lesson_id, sf, ai, store, settings):
     bg.add_task(run_ingestion, lesson_id, session_factory=sf, ai=ai, store=store,
                 upload_dir=settings.upload_dir,
-                after_ingest=lambda s, l: generate_questions_for_lesson(s, l, ai))
+                after_ingest=lambda texts: plan_questions(texts, ai))
 
 
 @router.post("", status_code=202, response_model=LessonOut)

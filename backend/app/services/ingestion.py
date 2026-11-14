@@ -4,11 +4,11 @@ import shutil
 from pathlib import Path
 from typing import Callable
 
-from sqlalchemy.orm import Session
-
 from app.clients.protocols import AIClient, VectorStore
 from app.models import Lesson
+from app.schemas import GeneratedQuestion
 from app.services.chunking import chunk_pages
+from app.services.generation import store_questions
 
 log = logging.getLogger(__name__)
 
@@ -25,33 +25,52 @@ def _find_image(upload_dir: str, lesson_id: int, page_order: int) -> Path:
 
 
 def run_ingestion(lesson_id: int, *, session_factory, ai: AIClient, store: VectorStore,
-                  upload_dir: str, after_ingest: Callable[[Session, Lesson], None]) -> None:
-    with session_factory() as session:
-        lesson = session.get(Lesson, lesson_id)
-        try:
-            store.delete_lesson(lesson_id)  # idempotent for retries
-            for page in lesson.pages:
-                img = _find_image(upload_dir, lesson_id, page.page_order)
-                mime = mimetypes.guess_type(img.name)[0] or "image/png"
-                page.extracted_text = ai.extract_page_text(img.read_bytes(), mime)
-            session.flush()
+                  upload_dir: str,
+                  after_ingest: Callable[[list[str]], list[GeneratedQuestion]]) -> None:
+    """Extract, embed and generate for a lesson, then mark it ready.
 
-            chunks = chunk_pages([(p.page_order, p.extracted_text) for p in lesson.pages])
-            if not chunks:
-                raise ValueError("no text could be extracted from the uploaded pages")
-            vectors = ai.embed([c.text for c in chunks])
-            store.upsert_chunks(lesson_id, chunks, vectors)
+    No database transaction is held open across network/LLM calls: SQLite allows a
+    single writer, so a long transaction would lock out every other request. Each
+    write below is its own short transaction. ``after_ingest`` receives the page
+    texts and returns the questions to store; it runs outside any transaction.
+    """
+    try:
+        with session_factory() as session:
+            page_orders = [p.page_order for p in session.get(Lesson, lesson_id).pages]
 
-            after_ingest(session, lesson)
+        store.delete_lesson(lesson_id)  # idempotent for retries
+        texts: list[str] = []
+        for order in page_orders:
+            img = _find_image(upload_dir, lesson_id, order)
+            mime = mimetypes.guess_type(img.name)[0] or "image/png"
+            texts.append(ai.extract_page_text(img.read_bytes(), mime))
+
+        with session_factory() as session:
+            for page, text in zip(session.get(Lesson, lesson_id).pages, texts, strict=True):
+                page.extracted_text = text
+            session.commit()
+
+        chunks = chunk_pages(list(zip(page_orders, texts)))
+        if not chunks:
+            raise ValueError("no text could be extracted from the uploaded pages")
+        vectors = ai.embed([c.text for c in chunks])
+        store.upsert_chunks(lesson_id, chunks, vectors)
+
+        questions = after_ingest(texts)
+
+        with session_factory() as session:
+            lesson = session.get(Lesson, lesson_id)
+            store_questions(session, lesson, questions)
             lesson.status, lesson.error_message = "ready", None
             session.commit()
-            shutil.rmtree(Path(upload_dir) / str(lesson_id), ignore_errors=True)
-        except Exception as e:  # recorded in DB; this runs as a background task
-            log.exception("ingestion failed for lesson %s", lesson_id)
-            session.rollback()
-            # Persist the original failure first so a failing store cleanup cannot mask it.
+        shutil.rmtree(Path(upload_dir) / str(lesson_id), ignore_errors=True)
+    except Exception as e:  # recorded in DB; this runs as a background task
+        log.exception("ingestion failed for lesson %s", lesson_id)
+        # Fresh session: the failed one may be mid-transaction. Persist the original
+        # failure first so a failing store cleanup cannot mask it.
+        with session_factory() as session:
             lesson = session.get(Lesson, lesson_id)
             lesson.status = "failed"
             lesson.error_message = f"{type(e).__name__}: {e}"
             session.commit()
-            store.delete_lesson(lesson_id)
+        store.delete_lesson(lesson_id)

@@ -14,11 +14,11 @@ test("enables submit only with title and files, then submits", async () => {
   expect(onSubmit).toHaveBeenCalledWith("Chapter 1", [expect.any(File)]);
 });
 
-test("file input accepts multiple images", () => {
+test("file input accepts multiple images of the types the backend supports", () => {
   render(<UploadForm onSubmit={vi.fn()} busy={false} error={null} />);
   const input = screen.getByLabelText(/pages/i);
   expect(input).toHaveAttribute("multiple");
-  expect(input).toHaveAttribute("accept", "image/*");
+  expect(input).toHaveAttribute("accept", "image/png,image/jpeg,image/webp");
 });
 
 test("blank title keeps submit disabled", async () => {

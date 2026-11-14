@@ -68,6 +68,8 @@ def plan_questions(page_texts: list[str], ai: AIClient) -> list[GeneratedQuestio
         for gq in ai.generate_questions(section, m, f).questions:
             _validate(gq)
             planned.append(gq)
+    if not planned:  # fail the lesson so it can be retried, rather than "ready" with no test
+        raise ValueError("question generation produced no questions")
     return planned
 
 

@@ -50,6 +50,15 @@ def test_mismatched_lengths_raise(store):
         store.upsert_chunks(1, [ChunkRecord(1, 0, "a")], [])
 
 
+@pytest.mark.parametrize("given,sent", [("", None), ("secret", "secret")])
+def test_empty_api_key_is_not_sent(monkeypatch, given, sent):
+    import app.clients.qdrant_store as mod
+    seen = {}
+    monkeypatch.setattr(mod, "QdrantClient", lambda **kw: seen.update(kw))
+    QdrantStore(url="http://q:6333", api_key=given)
+    assert seen == {"url": "http://q:6333", "api_key": sent}
+
+
 def test_empty_chunks_raise_clear_error(store):
     with pytest.raises(ValueError, match="requires at least one chunk"):
         store.upsert_chunks(1, [], [])

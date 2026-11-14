@@ -41,7 +41,7 @@ export function UploadForm({ onSubmit, busy, error }: Props) {
           id="lesson-pages"
           type="file"
           multiple
-          accept="image/*"
+          accept="image/png,image/jpeg,image/webp"
           onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
           className="mt-1 block w-full text-sm"
         />

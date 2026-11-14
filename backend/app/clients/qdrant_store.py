@@ -8,7 +8,7 @@ from app.clients.protocols import ChunkRecord
 class QdrantStore:
     def __init__(self, url: str = "", api_key: str = "", client: QdrantClient | None = None,
                  collection: str = "lesson_chunks", vector_size: int = 1536):
-        self._client = client if client is not None else QdrantClient(url=url, api_key=api_key)
+        self._client = client if client is not None else QdrantClient(url=url, api_key=api_key or None)  # "" would send an empty api-key header
         self._collection = collection
         self._vector_size = vector_size
 

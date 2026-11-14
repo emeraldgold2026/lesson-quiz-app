@@ -79,3 +79,11 @@ class BadAI(FakeAI):
 def test_invalid_llm_output_raises(q):
     with pytest.raises(ValueError):
         plan_questions(["some words here"], BadAI(q))
+
+
+def test_zero_generated_questions_raises():
+    class EmptyAI(FakeAI):
+        def generate_questions(self, *a, **k): return GeneratedBatch(questions=[])
+
+    with pytest.raises(ValueError, match="question generation produced no questions"):
+        plan_questions(["some words here"], EmptyAI())

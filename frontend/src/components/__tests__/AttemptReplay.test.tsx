@@ -29,7 +29,7 @@ test("free-text attempt shows type, score, student answer and feedback", async (
     score: 1,
     total_questions: 2,
     results: [
-      { question_id: 7, question_text: "Explain X", question_type: "free_text", student_response: "my own words", verdict: "correct", feedback_text: "Well done", correct_answer_text: "Reference" },
+      { question_id: 7, question_text: "Explain X", question_type: "free_text", student_response: "my own words", student_response_text: "my own words", verdict: "correct", feedback_text: "Well done", correct_answer_text: "Reference" },
     ],
   };
   const fetchMock = stubFetch({ ok: true, body: attempt });
@@ -62,12 +62,14 @@ test("MCQ attempt shows correct answer text and explanation, not raw choice ids"
     score: 0,
     total_questions: 1,
     results: [
-      { question_id: 3, question_text: "Pick one", question_type: "mcq_single", student_response: [4242], verdict: "incorrect", feedback_text: "Because reasons", correct_answer_text: "Option B" },
+      { question_id: 3, question_text: "Pick one", question_type: "mcq_single", student_response: [4242], student_response_text: "Option A", verdict: "incorrect", feedback_text: "Because reasons", correct_answer_text: "Option B" },
     ],
   };
   stubFetch({ ok: true, body: attempt });
   const { container } = render(<AttemptReplay attemptId={5} />);
   expect(await screen.findByText("MCQ test")).toBeInTheDocument();
+  expect(screen.getByText("Your answer:")).toBeInTheDocument();
+  expect(screen.getByText("Option A")).toBeInTheDocument();
   expect(screen.getByText("Option B")).toBeInTheDocument();
   expect(screen.getByText("Because reasons")).toBeInTheDocument();
   expect(container.textContent).not.toContain("4242");

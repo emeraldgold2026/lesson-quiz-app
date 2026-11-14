@@ -31,12 +31,10 @@ export function ResultsView({ attempt }: { attempt: Attempt }) {
             <p className="font-medium">{r.question_text}</p>
             <VerdictBadge result={r} />
           </div>
-          {freeText && typeof r.student_response === "string" && (
-            <div>
-              <p className="text-sm font-semibold">Your answer:</p>
-              <p className="whitespace-pre-wrap">{r.student_response}</p>
-            </div>
-          )}
+          <div>
+            <p className="text-sm font-semibold">Your answer:</p>
+            <p className="whitespace-pre-wrap">{r.student_response_text}</p>
+          </div>
           <div>
             <p className="text-sm font-semibold">Correct answer:</p>
             <p className="whitespace-pre-wrap">{r.correct_answer_text}</p>

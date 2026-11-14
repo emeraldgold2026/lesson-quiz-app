@@ -76,10 +76,22 @@ def attempt_summary_out(attempt: Attempt) -> AttemptSummaryOut:
         score=attempt.score, total_questions=attempt.total_questions)
 
 
+NO_SELECTION = "(no selection)"
+
+
+def _response_text(a: AttemptAnswer) -> str:
+    if a.question.type == "free_text":
+        return a.student_response
+    selected = set(a.student_response)
+    texts = [c.choice_text for c in a.question.choices if c.id in selected]
+    return "; ".join(texts) if texts else NO_SELECTION
+
+
 def attempt_out(attempt: Attempt) -> AttemptOut:
     results = [AnswerResultOut(
         question_id=a.question_id, question_text=a.question.question_text,
         question_type=a.question.type, student_response=a.student_response,
+        student_response_text=_response_text(a),
         verdict=a.verdict, feedback_text=a.feedback_text,
         correct_answer_text=a.correct_answer_text) for a in attempt.answers]
     return AttemptOut(**attempt_summary_out(attempt).model_dump(), results=results)

@@ -53,6 +53,7 @@ test("successful submit shows results with Retake and lesson links", async () =>
         question_text: "Q1",
         question_type: "free_text",
         student_response: "x",
+        student_response_text: "x",
         verdict: "correct",
         feedback_text: "Nice",
         correct_answer_text: "x",

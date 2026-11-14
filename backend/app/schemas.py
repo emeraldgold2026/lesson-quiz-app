@@ -67,6 +67,7 @@ class AnswerResultOut(BaseModel):
     question_text: str
     question_type: str
     student_response: list[int] | str
+    student_response_text: str  # readable answer: free text, or selected MCQ choice texts
     verdict: str
     feedback_text: str
     correct_answer_text: str

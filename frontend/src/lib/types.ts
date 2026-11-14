@@ -27,6 +27,8 @@ export interface AnswerResult {
   question_text: string;
   question_type: string;
   student_response: number[] | string;
+  /** Readable answer: the free text, or the selected MCQ choices' texts. */
+  student_response_text: string;
   verdict: "correct" | "partially_correct" | "incorrect";
   feedback_text: string;
   correct_answer_text: string;

@@ -28,6 +28,11 @@ def test_mcq_submit_grades_and_persists(make_client, session_factory, fake_store
     assert r["total_questions"] == len(qs) and r["score"] == len(qs) - 1
     assert r["results"][0]["verdict"] == "incorrect" and r["results"][0]["correct_answer_text"] == "right"
     assert r["results"][0]["feedback_text"] == "because"
+    assert r["results"][0]["student_response_text"] == "wrong"
+    assert r["results"][1]["student_response_text"] == "right"
+    replay = c.get(f"/attempts/{r['id']}").json()
+    assert [x["student_response_text"] for x in replay["results"]] == \
+        [x["student_response_text"] for x in r["results"]]
     assert c.get(f"/attempts/{r['id']}").json()["score"] == r["score"]
     assert len(c.get(f"/lessons/{lid}/attempts").json()) == 1
 
@@ -57,6 +62,7 @@ def test_free_text_flow_scores_partial_as_half(make_client, session_factory, fak
     r = c.post(f"/lessons/{lid}/free-text-test/submit", json={"answers": answers}).json()
     assert r["score"] == 1.5
     assert r["results"][0]["correct_answer_text"] == "ref 0"
+    assert [x["student_response_text"] for x in r["results"][:3]] == ["a1", "a2", "zzz"]
 
 
 def test_free_text_grading_failure_persists_nothing(make_client, session_factory, fake_store, tmp_path):
@@ -68,6 +74,16 @@ def test_free_text_grading_failure_persists_nothing(make_client, session_factory
     r = c.post(f"/lessons/{lid}/free-text-test/submit", json={"answers": {q["id"]: "x" for q in qs}})
     assert r.status_code == 502
     assert c.get(f"/lessons/{lid}/attempts").json() == []
+
+
+def test_mcq_result_text_lists_selected_choices_or_placeholder(make_client, session_factory, fake_store, tmp_path):
+    c, _, lid = ready(make_client, session_factory, fake_store, tmp_path)
+    qs = c.get(f"/lessons/{lid}/mcq-test").json()
+    answers = {q["id"]: [] for q in qs}
+    answers[qs[0]["id"]] = [ch["id"] for ch in qs[0]["choices"]]
+    r = c.post(f"/lessons/{lid}/mcq-test/submit", json={"answers": answers}).json()
+    assert r["results"][0]["student_response_text"] == "right; wrong"
+    assert r["results"][1]["student_response_text"] == "(no selection)"
 
 
 def test_timestamps_keep_utc_offset_after_db_roundtrip(make_client, session_factory, fake_store, tmp_path):

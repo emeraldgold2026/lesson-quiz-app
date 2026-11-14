@@ -1,3 +1,6 @@
+import shutil
+from pathlib import Path
+
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -49,11 +52,17 @@ async def create_lesson(bg: BackgroundTasks, title: str = Form(...),
     lesson = Lesson(title=title.strip(), status="processing", page_count=len(files))
     lesson.pages = [LessonPage(page_order=i) for i in range(len(files))]
     session.add(lesson)
+    session.flush()  # assigns lesson.id; nothing is persisted until the uploads are on disk
+    try:
+        for i, f in enumerate(files):
+            path = upload_path(settings.upload_dir, lesson.id, i, ALLOWED[f.content_type])
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(await f.read())
+    except BaseException:
+        shutil.rmtree(Path(settings.upload_dir) / str(lesson.id), ignore_errors=True)
+        session.rollback()
+        raise
     session.commit()
-    for i, f in enumerate(files):
-        path = upload_path(settings.upload_dir, lesson.id, i, ALLOWED[f.content_type])
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(await f.read())
     _schedule(bg, lesson.id, sf, ai, store, settings)
     return to_out(lesson)
 

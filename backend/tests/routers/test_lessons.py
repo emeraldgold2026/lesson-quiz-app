@@ -1,3 +1,5 @@
+import pytest
+
 from tests.fakes import FakeAI
 
 PNG = ("p.png", b"\x89PNG", "image/png")
@@ -29,6 +31,15 @@ def test_failed_lesson_can_be_retried(make_client, session_factory, fake_store, 
     assert c.post(f"/lessons/{lid}/retry").status_code == 202
     assert c.get(f"/lessons/{lid}").json()["status"] == "ready"
     assert c.post(f"/lessons/{lid}/retry").status_code == 409
+
+
+def test_failed_upload_write_persists_nothing(make_client, session_factory, fake_store, tmp_path):
+    (tmp_path / "blocked").write_text("not a directory")
+    c = make_client(session_factory, FakeAI(), fake_store, tmp_path / "blocked" / "x")
+    with pytest.raises(OSError):
+        c.post("/lessons", data={"title": "T"}, files=[("files", PNG)])
+    assert c.get("/lessons").json() == []
+    assert [p.name for p in tmp_path.iterdir()] == ["blocked"]
 
 
 def test_list_and_404(make_client, session_factory, fake_store, tmp_path):

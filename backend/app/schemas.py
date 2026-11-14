@@ -1,6 +1,17 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel
+
+
+class LessonOut(BaseModel):
+    id: int
+    title: str
+    status: str
+    error_message: str | None
+    page_count: int
+    created_at: datetime
+    has_questions: bool
 
 
 class GeneratedChoice(BaseModel):

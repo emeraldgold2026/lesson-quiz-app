@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { getLesson, listAttempts, retryLesson } from "@/lib/api";
 import type { AttemptSummary, Lesson } from "@/lib/types";
@@ -12,12 +12,21 @@ export default function LessonDetail({ params }: PageProps<"/lessons/[id]">) {
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [attempts, setAttempts] = useState<AttemptSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+
+  // Only the most recently issued lesson request may update state, so a slow poll
+  // sent before a Retry cannot overwrite the Retry's newer result.
+  const latestRequest = useRef(0);
 
   const refresh = useCallback(async () => {
+    const seq = ++latestRequest.current;
     try {
-      setLesson(await getLesson(id));
+      const fresh = await getLesson(id);
+      if (seq !== latestRequest.current) return;
+      setLesson(fresh);
       setError(null);
     } catch (e) {
+      if (seq !== latestRequest.current) return;
       setError(e instanceof Error ? e.message : String(e));
     }
   }, [id]);
@@ -35,11 +44,16 @@ export default function LessonDetail({ params }: PageProps<"/lessons/[id]">) {
   }, [status, refresh]);
 
   async function handleRetry() {
+    const seq = ++latestRequest.current;
+    setRetrying(true);
     try {
-      setLesson(await retryLesson(id));
+      const fresh = await retryLesson(id);
+      if (seq === latestRequest.current) setLesson(fresh);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRetrying(false);
     }
   }
 
@@ -71,9 +85,10 @@ export default function LessonDetail({ params }: PageProps<"/lessons/[id]">) {
               <p className="text-red-700">{lesson.error_message}</p>
               <button
                 onClick={() => void handleRetry()}
-                className="rounded bg-blue-600 px-4 py-2 text-white"
+                disabled={retrying}
+                className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
               >
-                Retry
+                {retrying ? "Retrying..." : "Retry"}
               </button>
             </div>
           )}

@@ -2,7 +2,7 @@ import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.config import Settings
@@ -82,10 +82,13 @@ def get_lesson(lesson_id: int, session: Session = Depends(get_session)):
 def retry_lesson(lesson_id: int, bg: BackgroundTasks, session: Session = Depends(get_session),
                  sf=Depends(get_session_factory), ai=Depends(get_ai), store=Depends(get_store),
                  settings: Settings = Depends(get_settings)):
-    lesson = _get_or_404(session, lesson_id)
-    if lesson.status != "failed":
-        raise HTTPException(409, f"lesson is {lesson.status}; only failed lessons can be retried")
-    lesson.status, lesson.error_message = "processing", None
+    # Conditional update so two concurrent retries cannot both schedule ingestion.
+    claimed = session.execute(
+        update(Lesson).where(Lesson.id == lesson_id, Lesson.status == "failed")
+        .values(status="processing", error_message=None)).rowcount
     session.commit()
+    lesson = _get_or_404(session, lesson_id)
+    if not claimed:
+        raise HTTPException(409, f"lesson is {lesson.status}; only failed lessons can be retried")
     _schedule(bg, lesson.id, sf, ai, store, settings)
     return to_out(lesson)

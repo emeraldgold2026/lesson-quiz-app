@@ -51,6 +51,41 @@ def test_list_and_404(make_client, session_factory, fake_store, tmp_path):
     assert c.get("/lessons/999").status_code == 404
 
 
+def test_retry_unknown_lesson_is_404(make_client, session_factory, fake_store, tmp_path):
+    c = make_client(session_factory, FakeAI(), fake_store, tmp_path)
+    assert c.post("/lessons/999/retry").status_code == 404
+
+
+def test_retry_is_atomic_against_a_concurrent_retry(make_client, fake_store, tmp_path):
+    """A competing retry that commits just before ours writes must make ours 409."""
+    import sqlite3
+
+    from sqlalchemy import event
+
+    db = tmp_path / "app.db"
+    sf = make_session_factory(f"sqlite:///{db}")
+    ai = FakeAI(fail_on_page=0)
+    c = make_client(sf, ai, fake_store, tmp_path / "uploads")
+    lid = c.post("/lessons", data={"title": "T"}, files=[("files", PNG)]).json()["id"]
+    assert c.get(f"/lessons/{lid}").json()["status"] == "failed"
+    ai.extract_calls, ai.fail_on_page = 0, None
+
+    competitor: dict = {}
+
+    def race(conn, cursor, statement, params, context, executemany):
+        if statement.startswith("UPDATE lessons") and "won" not in competitor:
+            with sqlite3.connect(db) as other:  # the other request's retry, landing first
+                competitor["won"] = other.execute(
+                    "UPDATE lessons SET status='processing', error_message=NULL "
+                    "WHERE id=? AND status='failed'", (lid,)).rowcount == 1
+
+    event.listen(sf.kw["bind"], "before_cursor_execute", race)
+    r = c.post(f"/lessons/{lid}/retry")
+    event.remove(sf.kw["bind"], "before_cursor_execute", race)
+    assert competitor["won"] is True
+    assert r.status_code == 409  # only one of the two retries may schedule ingestion
+
+
 class HoldingAI(FakeAI):
     """Blocks the first generate_questions call until released, to model a slow LLM."""
 

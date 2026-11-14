@@ -74,7 +74,7 @@ class BadAI(FakeAI):
                       choices=[GeneratedChoice(text="a", is_correct=False), GeneratedChoice(text="b", is_correct=False)]),
     GeneratedQuestion(type="mcq_single", question_text="q", explanation="e",
                       choices=[GeneratedChoice(text="a", is_correct=True), GeneratedChoice(text="b", is_correct=True)]),
-    GeneratedQuestion(type="free_text", question_text="q", explanation="e"),
+    GeneratedQuestion(type="free_text", question_text="q", explanation="e", choices=[]),
 ])
 def test_invalid_llm_output_raises(q):
     with pytest.raises(ValueError):

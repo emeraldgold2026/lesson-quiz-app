@@ -23,8 +23,9 @@ class GeneratedQuestion(BaseModel):
     type: Literal["mcq_single", "mcq_multi", "free_text"]
     question_text: str
     explanation: str
-    choices: list[GeneratedChoice] = []
-    reference_answer: str | None = None
+    # No default: OpenAI strict Structured Outputs rejects `default` in the schema.
+    choices: list[GeneratedChoice]
+    reference_answer: str | None = None  # pydantic default is dropped by to_strict_json_schema
 
 
 class GeneratedBatch(BaseModel):

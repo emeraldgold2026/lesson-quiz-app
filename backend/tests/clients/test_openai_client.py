@@ -89,3 +89,20 @@ def test_embed_empty_returns_empty_without_calling_api():
     stub = StubOpenAI()
     assert OpenAIClient(api_key="k", client=stub).embed([]) == []
     assert stub.calls == []
+
+
+def _keys(node):
+    if isinstance(node, dict):
+        for k, v in node.items():
+            yield k
+            yield from _keys(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _keys(v)
+
+
+@pytest.mark.parametrize("model", [GeneratedBatch, FreeTextVerdict])
+def test_structured_output_schemas_are_strict_mode_compatible(model):
+    from openai.lib._pydantic import to_strict_json_schema
+    # OpenAI strict Structured Outputs rejects `default` anywhere in the schema.
+    assert "default" not in set(_keys(to_strict_json_schema(model)))

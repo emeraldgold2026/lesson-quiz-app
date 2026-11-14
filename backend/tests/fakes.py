@@ -32,7 +32,7 @@ class FakeAI:
             for i in range(n_mcq)
         ] + [
             GeneratedQuestion(type="free_text", question_text=f"Free {i}?",
-                              explanation="because", reference_answer=f"ref {i}")
+                              explanation="because", choices=[], reference_answer=f"ref {i}")
             for i in range(n_free_text)
         ]
         return GeneratedBatch(questions=qs)

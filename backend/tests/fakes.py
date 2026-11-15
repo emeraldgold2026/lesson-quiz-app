@@ -1,3 +1,5 @@
+import hashlib
+
 from app.clients.protocols import ChunkRecord
 from app.schemas import FreeTextVerdict, GeneratedBatch, GeneratedChoice, GeneratedQuestion
 
@@ -11,6 +13,7 @@ class FakeAI:
         self.extract_calls = 0
         self.generate_calls: list[tuple[str, int, int]] = []
         self.avoid_calls: list[list[str] | None] = []
+        self._fresh = 0
         self.grade_calls: list[dict] = []
 
     def extract_page_text(self, image_bytes, mime_type):
@@ -26,18 +29,29 @@ class FakeAI:
     def generate_questions(self, section_text, n_mcq, n_free_text, avoid=None):
         self.generate_calls.append((section_text, n_mcq, n_free_text))
         self.avoid_calls.append(avoid)
-        qs = [
+        if avoid is None:  # initial generation
+            return self.batch([f"MCQ {i}?" for i in range(n_mcq)], [f"Free {i}?" for i in range(n_free_text)])
+        # "more questions" call: wording is distinct on every call, so nothing repeats by accident
+        return self.batch([self.fresh_text("MCQ") for _ in range(n_mcq)],
+                          [self.fresh_text("Free") for _ in range(n_free_text)])
+
+    def fresh_text(self, prefix):
+        self._fresh += 1
+        return f"{prefix} {hashlib.sha1(str(self._fresh).encode()).hexdigest()[:24]}?"
+
+    @staticmethod
+    def batch(mcq_texts, free_texts):
+        return GeneratedBatch(questions=[
             GeneratedQuestion(
-                type="mcq_single", question_text=f"MCQ {i}?", explanation="because",
+                type="mcq_single", question_text=t, explanation="because",
                 choices=[GeneratedChoice(text="right", is_correct=True),
                          GeneratedChoice(text="wrong", is_correct=False)])
-            for i in range(n_mcq)
+            for t in mcq_texts
         ] + [
-            GeneratedQuestion(type="free_text", question_text=f"Free {i}?",
+            GeneratedQuestion(type="free_text", question_text=t,
                               explanation="because", choices=[], reference_answer=f"ref {i}")
-            for i in range(n_free_text)
-        ]
-        return GeneratedBatch(questions=qs)
+            for i, t in enumerate(free_texts)
+        ])
 
     def grade_free_text(self, question, student_answer, reference_answer, grounding):
         if self.fail_grading:

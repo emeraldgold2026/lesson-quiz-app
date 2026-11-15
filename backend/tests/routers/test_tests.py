@@ -168,6 +168,62 @@ def test_generate_more_questions_appends_without_duplicating(make_client, sessio
     assert "MCQ 0?" in ai.avoid_calls[-1]  # existing question texts were passed to the model
 
 
+def _repeating_ai(repeats):
+    """Fake whose first 'more questions' call returns `repeats` (as MCQ texts) plus fresh ones."""
+    from tests.fakes import FakeAI
+
+    class RepeatingAI(FakeAI):
+        first = True
+
+        def generate_questions(self, section_text, n_mcq, n_free_text, avoid=None):
+            if avoid is None or not self.first:
+                return super().generate_questions(section_text, n_mcq, n_free_text, avoid)
+            self.first = False
+            self.generate_calls.append((section_text, n_mcq, n_free_text))
+            self.avoid_calls.append(avoid)
+            return self.batch(repeats[:n_mcq] + [self.fresh_text("MCQ") for _ in range(n_mcq - len(repeats))], [])
+
+    return RepeatingAI(page_texts=["word " * 2000])
+
+
+def test_generate_more_drops_repeats_of_existing_questions_and_tops_up(
+        make_client, session_factory, fake_store, tmp_path):
+    # An exact repeat ("MCQ 0?"), a case/punctuation variant, and a near-identical wording.
+    ai = _repeating_ai(["MCQ 0?", "mcq 0", "MCQ 0 ??"])
+    c, _, lid = ready(make_client, session_factory, fake_store, tmp_path, ai)
+    before = [q["id"] for q in c.get(f"/lessons/{lid}/mcq-test").json()]
+    r = c.post(f"/lessons/{lid}/questions", json={"kind": "mcq", "count": 3}).json()
+    assert r == {"added": 3, "total": len(before) + 3}  # repeats replaced by a top-up round
+    assert len(ai.generate_calls) > 2  # the top-up needed another generation call
+    texts = [q["question_text"] for q in c.get(f"/lessons/{lid}/mcq-test").json()]
+    assert len(texts) == len(set(texts))
+
+
+def test_generate_more_drops_near_duplicate_wording():
+    from app.services.generation import _is_duplicate, _normalize
+    n = _normalize
+    assert _is_duplicate(n("What is the capital of France?"), n("What is the capital of France"))
+    assert _is_duplicate(n("What is the capital of France?"), n("What's the capital of France?"))
+    assert not _is_duplicate(n("What is the capital of France?"), n("Who founded the Roman Republic?"))
+
+
+def test_generate_more_fails_when_every_question_is_a_duplicate(
+        make_client, session_factory, fake_store, tmp_path):
+    from tests.fakes import FakeAI
+
+    class AlwaysRepeats(FakeAI):
+        def generate_questions(self, section_text, n_mcq, n_free_text, avoid=None):
+            if avoid is None:
+                return super().generate_questions(section_text, n_mcq, n_free_text, avoid)
+            return self.batch(["MCQ 0?"] * n_mcq, [])
+
+    c, _, lid = ready(make_client, session_factory, fake_store, tmp_path, AlwaysRepeats(page_texts=["word " * 2000]))
+    n = len(c.get(f"/lessons/{lid}/mcq-test").json())
+    r = c.post(f"/lessons/{lid}/questions", json={"kind": "mcq", "count": 2})
+    assert r.status_code == 502 and "duplicates" in r.json()["detail"]
+    assert len(c.get(f"/lessons/{lid}/mcq-test").json()) == n
+
+
 def test_generate_more_free_text_questions(make_client, session_factory, fake_store, tmp_path):
     c, _, lid = ready(make_client, session_factory, fake_store, tmp_path)
     n = len(c.get(f"/lessons/{lid}/free-text-test").json())

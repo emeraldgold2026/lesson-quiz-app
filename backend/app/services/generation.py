@@ -1,5 +1,7 @@
 import random
+import re
 from collections import Counter
+from difflib import SequenceMatcher
 
 from sqlalchemy.orm import Session
 
@@ -10,6 +12,8 @@ from app.schemas import GeneratedQuestion
 MCQ_WORDS_PER_Q = 175
 FREE_WORDS_PER_Q = 350
 MIN_Q, MAX_Q = 5, 100
+DUPLICATE_SIMILARITY = 0.85  # normalized-text similarity at or above which a question counts as a repeat
+TOP_UP_ROUNDS = 2  # extra generation rounds to replace duplicates that were dropped
 
 
 def _clamp(n: int) -> int:
@@ -76,6 +80,15 @@ def plan_questions(page_texts: list[str], ai: AIClient) -> list[GeneratedQuestio
     return planned
 
 
+def _normalize(text: str) -> str:
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", text.lower()).split())
+
+
+def _is_duplicate(a: str, b: str) -> bool:
+    """Same question after ignoring case/punctuation, or near-identical wording."""
+    return a == b or SequenceMatcher(None, a, b).ratio() >= DUPLICATE_SIMILARITY
+
+
 def plan_more_questions(page_texts: list[str], kind: str, count: int, existing: list[str],
                         ai: AIClient) -> list[GeneratedQuestion]:
     """Generate `count` extra questions of `kind` ("mcq" or "free_text"), steering the model away
@@ -85,23 +98,32 @@ def plan_more_questions(page_texts: list[str], kind: str, count: int, existing: 
     if not sections:
         raise ValueError("lesson has no text to generate questions from")
     weights = [len(s.split()) for s in sections]
-    per_section = Counter(random.choices(range(len(sections)), weights=weights, k=count))
     wanted = {"mcq_single", "mcq_multi"} if kind == "mcq" else {"free_text"}
     avoid = list(existing)
+    seen = [_normalize(t) for t in existing]
     planned: list[GeneratedQuestion] = []
-    for i in sorted(per_section):
-        n = per_section[i]
-        batch = ai.generate_questions(sections[i], n if kind == "mcq" else 0,
-                                      n if kind == "free_text" else 0, avoid)
-        for gq in batch.questions:
-            if gq.type not in wanted:
-                continue
-            _validate(gq)
-            planned.append(gq)
-            avoid.append(gq.question_text)
+    for _ in range(1 + TOP_UP_ROUNDS):  # later rounds replace questions dropped as duplicates
+        need = count - len(planned)
+        if need <= 0:
+            break
+        per_section = Counter(random.choices(range(len(sections)), weights=weights, k=need))
+        for i in sorted(per_section):
+            n = per_section[i]
+            batch = ai.generate_questions(sections[i], n if kind == "mcq" else 0,
+                                          n if kind == "free_text" else 0, avoid)
+            for gq in batch.questions:
+                if gq.type not in wanted:
+                    continue
+                _validate(gq)
+                norm = _normalize(gq.question_text)
+                if any(_is_duplicate(norm, s) for s in seen):
+                    continue
+                planned.append(gq)
+                seen.append(norm)
+                avoid.append(gq.question_text)
     if not planned:
-        raise ValueError("question generation produced no questions")
-    return planned
+        raise ValueError("question generation produced no new questions (all were duplicates)")
+    return planned[:count]
 
 
 def append_questions(session: Session, lesson: Lesson, questions: list[GeneratedQuestion]) -> None:

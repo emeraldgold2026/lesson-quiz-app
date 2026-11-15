@@ -10,6 +10,7 @@ class FakeAI:
         self.fail_grading = fail_grading
         self.extract_calls = 0
         self.generate_calls: list[tuple[str, int, int]] = []
+        self.avoid_calls: list[list[str] | None] = []
         self.grade_calls: list[dict] = []
 
     def extract_page_text(self, image_bytes, mime_type):
@@ -22,8 +23,9 @@ class FakeAI:
     def embed(self, texts):
         return [[float(len(t)), 0.0] for t in texts]
 
-    def generate_questions(self, section_text, n_mcq, n_free_text):
+    def generate_questions(self, section_text, n_mcq, n_free_text, avoid=None):
         self.generate_calls.append((section_text, n_mcq, n_free_text))
+        self.avoid_calls.append(avoid)
         qs = [
             GeneratedQuestion(
                 type="mcq_single", question_text=f"MCQ {i}?", explanation="because",

@@ -152,3 +152,54 @@ def test_tests_unavailable_until_ready(make_client, session_factory, fake_store,
     c = make_client(session_factory, FakeAI(fail_on_page=0), fake_store, tmp_path)
     lid = c.post("/lessons", data={"title": "T"}, files=[("files", ("p.png", b"x", "image/png"))]).json()["id"]
     assert c.get(f"/lessons/{lid}/mcq-test").status_code == 409
+    assert c.post(f"/lessons/{lid}/questions", json={"kind": "mcq", "count": 1}).status_code == 409
+
+
+def test_generate_more_questions_appends_without_duplicating(make_client, session_factory, fake_store, tmp_path):
+    c, ai, lid = ready(make_client, session_factory, fake_store, tmp_path)
+    before = c.get(f"/lessons/{lid}/mcq-test").json()
+    free_before = c.get(f"/lessons/{lid}/free-text-test").json()
+    r = c.post(f"/lessons/{lid}/questions", json={"kind": "mcq", "count": 3})
+    assert r.status_code == 200
+    assert r.json() == {"added": 3, "total": len(before) + 3}
+    after = c.get(f"/lessons/{lid}/mcq-test").json()
+    assert [q["id"] for q in after[: len(before)]] == [q["id"] for q in before]  # existing kept
+    assert len(c.get(f"/lessons/{lid}/free-text-test").json()) == len(free_before)  # other kind untouched
+    assert "MCQ 0?" in ai.avoid_calls[-1]  # existing question texts were passed to the model
+
+
+def test_generate_more_free_text_questions(make_client, session_factory, fake_store, tmp_path):
+    c, _, lid = ready(make_client, session_factory, fake_store, tmp_path)
+    n = len(c.get(f"/lessons/{lid}/free-text-test").json())
+    r = c.post(f"/lessons/{lid}/questions", json={"kind": "free_text", "count": 2}).json()
+    assert r == {"added": 2, "total": n + 2}
+
+
+def test_generate_more_keeps_past_attempts(make_client, session_factory, fake_store, tmp_path):
+    c, _, lid = ready(make_client, session_factory, fake_store, tmp_path)
+    qs = c.get(f"/lessons/{lid}/mcq-test").json()
+    attempt = c.post(f"/lessons/{lid}/mcq-test/submit",
+                     json={"answers": {q["id"]: [q["choices"][0]["id"]] for q in qs}}).json()
+    c.post(f"/lessons/{lid}/questions", json={"kind": "mcq", "count": 1})
+    replay = c.get(f"/attempts/{attempt['id']}").json()
+    assert len(replay["results"]) == len(qs)
+
+
+def test_generate_more_validates_request_and_lesson(make_client, session_factory, fake_store, tmp_path):
+    c, _, lid = ready(make_client, session_factory, fake_store, tmp_path)
+    assert c.post(f"/lessons/{lid}/questions", json={"kind": "mcq", "count": 0}).status_code == 422
+    assert c.post(f"/lessons/{lid}/questions", json={"kind": "mcq", "count": 21}).status_code == 422
+    assert c.post(f"/lessons/{lid}/questions", json={"kind": "essay", "count": 1}).status_code == 422
+    assert c.post("/lessons/999/questions", json={"kind": "mcq", "count": 1}).status_code == 404
+
+
+def test_generate_more_reports_llm_failure_and_stores_nothing(make_client, session_factory, fake_store, tmp_path):
+    c, ai, lid = ready(make_client, session_factory, fake_store, tmp_path)
+    n = len(c.get(f"/lessons/{lid}/mcq-test").json())
+
+    def boom(*a, **k):
+        raise RuntimeError("openai down")
+    ai.generate_questions = boom
+    r = c.post(f"/lessons/{lid}/questions", json={"kind": "mcq", "count": 2})
+    assert r.status_code == 502 and "openai down" in r.json()["detail"]
+    assert len(c.get(f"/lessons/{lid}/mcq-test").json()) == n

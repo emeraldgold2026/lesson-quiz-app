@@ -75,11 +75,18 @@ class OpenAIClient:
             out.extend(d.embedding for d in resp.data)
         return out
 
-    def generate_questions(self, section_text: str, n_mcq: int, n_free_text: int) -> GeneratedBatch:
+    def generate_questions(self, section_text: str, n_mcq: int, n_free_text: int,
+                           avoid: list[str] | None = None) -> GeneratedBatch:
+        user = f"<textbook_section>\n{section_text}\n</textbook_section>"
+        if avoid:
+            existing = "\n".join(f"- {q}" for q in avoid)
+            user += (f"\n\n<existing_questions>\n{existing}\n</existing_questions>\n"
+                     "Do not repeat or closely paraphrase any existing question; "
+                     "cover different facts or angles.")
         return self._parse([
             {"role": "system",
              "content": GENERATION_SYSTEM_PROMPT.format(n_mcq=n_mcq, n_free_text=n_free_text)},
-            {"role": "user", "content": f"<textbook_section>\n{section_text}\n</textbook_section>"},
+            {"role": "user", "content": user},
         ], GeneratedBatch)
 
     def grade_free_text(self, question: str, student_answer: str, reference_answer: str,

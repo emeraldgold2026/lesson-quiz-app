@@ -1,3 +1,6 @@
+import random
+from collections import Counter
+
 from sqlalchemy.orm import Session
 
 from app.clients.protocols import AIClient
@@ -71,6 +74,45 @@ def plan_questions(page_texts: list[str], ai: AIClient) -> list[GeneratedQuestio
     if not planned:  # fail the lesson so it can be retried, rather than "ready" with no test
         raise ValueError("question generation produced no questions")
     return planned
+
+
+def plan_more_questions(page_texts: list[str], kind: str, count: int, existing: list[str],
+                        ai: AIClient) -> list[GeneratedQuestion]:
+    """Generate `count` extra questions of `kind` ("mcq" or "free_text"), steering the model away
+    from `existing` question texts. Sections are drawn at random, weighted by length, so repeated
+    calls spread over the whole lesson. Touches no database."""
+    sections = make_sections(page_texts)
+    if not sections:
+        raise ValueError("lesson has no text to generate questions from")
+    weights = [len(s.split()) for s in sections]
+    per_section = Counter(random.choices(range(len(sections)), weights=weights, k=count))
+    wanted = {"mcq_single", "mcq_multi"} if kind == "mcq" else {"free_text"}
+    avoid = list(existing)
+    planned: list[GeneratedQuestion] = []
+    for i in sorted(per_section):
+        n = per_section[i]
+        batch = ai.generate_questions(sections[i], n if kind == "mcq" else 0,
+                                      n if kind == "free_text" else 0, avoid)
+        for gq in batch.questions:
+            if gq.type not in wanted:
+                continue
+            _validate(gq)
+            planned.append(gq)
+            avoid.append(gq.question_text)
+    if not planned:
+        raise ValueError("question generation produced no questions")
+    return planned
+
+
+def append_questions(session: Session, lesson: Lesson, questions: list[GeneratedQuestion]) -> None:
+    """Add to the lesson's questions, keeping existing ones (past attempts reference them)."""
+    for gq in questions:
+        q = Question(type=gq.type, question_text=gq.question_text,
+                     explanation=gq.explanation, reference_answer=gq.reference_answer)
+        q.choices = [McqChoice(choice_text=c.text, is_correct=c.is_correct, order_index=i)
+                     for i, c in enumerate(gq.choices)]
+        lesson.questions.append(q)
+    session.commit()
 
 
 def store_questions(session: Session, lesson: Lesson, questions: list[GeneratedQuestion]) -> None:

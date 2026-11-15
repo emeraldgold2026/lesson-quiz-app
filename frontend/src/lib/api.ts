@@ -64,6 +64,9 @@ export const getFreeTextTest = (id: number) =>
 export const submitFreeTextTest = (id: number, answers: Record<number, string>) =>
   postJson<Attempt>(`/lessons/${id}/free-text-test/submit`, { answers });
 
-export const listAttempts = (id: number) =>
+export const generateMoreQuestions = (id: number, kind: "mcq" | "free_text", count: number) =>
+  postJson<{ added: number; total: number }>(`/lessons/${id}/questions`, { kind, count });
+
+export const listAttempts =(id: number) =>
   request<AttemptSummary[]>(`/lessons/${id}/attempts`);
 export const getAttempt = (id: number) => request<Attempt>(`/attempts/${id}`);

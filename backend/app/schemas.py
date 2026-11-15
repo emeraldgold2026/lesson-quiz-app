@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class LessonOut(BaseModel):
@@ -30,6 +30,16 @@ class GeneratedQuestion(BaseModel):
 
 class GeneratedBatch(BaseModel):
     questions: list[GeneratedQuestion]
+
+
+class MoreQuestionsRequest(BaseModel):
+    kind: Literal["mcq", "free_text"]
+    count: int = Field(ge=1, le=20)
+
+
+class MoreQuestionsOut(BaseModel):
+    added: int
+    total: int  # questions of this kind the lesson now has
 
 
 class FreeTextVerdict(BaseModel):

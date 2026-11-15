@@ -4,6 +4,7 @@ import { use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { getLesson, listAttempts, retryLesson } from "@/lib/api";
 import type { AttemptSummary, Lesson } from "@/lib/types";
+import { GenerateMoreQuestions } from "@/components/GenerateMoreQuestions";
 import { StatusBadge } from "@/components/StatusBadge";
 
 export default function LessonDetail({ params }: PageProps<"/lessons/[id]">) {
@@ -113,6 +114,10 @@ export default function LessonDetail({ params }: PageProps<"/lessons/[id]">) {
                 >
                   View Past Attempts
                 </button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <GenerateMoreQuestions lessonId={id} kind="mcq" label="MCQ" />
+                <GenerateMoreQuestions lessonId={id} kind="free_text" label="free-text" />
               </div>
               {attempts && (
                 <ul className="divide-y rounded border">

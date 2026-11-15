@@ -23,8 +23,8 @@ uv sync
 
 | Variable | Notes |
 | --- | --- |
-| `OPENAI_API_KEY` | Required |
-| `QDRANT_URL` | Required, e.g. `http://localhost:6333` |
+| `OPENAI_API_KEY` | Required. If blank, requests that need it fail with a 503 naming the setting |
+| `QDRANT_URL` | Required, e.g. `http://localhost:6333`. If blank, requests that need it fail with a 503 naming the setting |
 | `QDRANT_API_KEY` | Blank for local Qdrant |
 | `DATABASE_URL` | Optional, default `sqlite:///data/app.db` |
 | `UPLOAD_DIR` | Optional, default `data/uploads` |
@@ -62,6 +62,16 @@ cd frontend && npm test
 3. The text is chunked and embedded into Qdrant.
 4. Multiple-choice and free-text questions are generated from the chunks.
 5. You take a test; answers are graded and the attempt is stored in SQLite.
+6. From the lesson page you can generate more MCQ or free-text questions (1–20 at a time) at any point.
+
+### Generating more questions
+
+`POST /lessons/{id}/questions` with `{"kind": "mcq" | "free_text", "count": 1-20}` appends questions to a `ready` lesson and returns `{"added", "total"}`.
+
+- Existing questions are kept, so past attempts still replay correctly. Open a test page again to see the new questions.
+- Sections of the lesson are picked at random, weighted by length, so repeated requests spread across the whole lesson.
+- Duplicates are filtered in code: each new question is compared with the lesson's existing questions of that kind and with the other new ones, ignoring case and punctuation, and dropped if it is identical or at least 85% similar. Up to two extra rounds replace dropped questions, so you can still get fewer than requested. If every question is a duplicate, or generation fails, the request returns a 502 and stores nothing.
+- The check is wording-based; it does not catch the same fact asked in very different words.
 
 ## Known limits
 
@@ -70,3 +80,4 @@ cd frontend && npm test
 - Uploaded images are kept on disk only until ingestion succeeds; they are retained on failure so Retry works.
 - Ingestion runs inside the API process: on startup, any lesson still `processing` (for example after a `--reload` restart mid-ingestion) is marked `failed` with "Interrupted by a server restart; use Retry." Its uploads are kept, so Retry works. Run a single API process.
 - A lesson whose pages yield no text fails with a clear error.
+- Generating more questions waits for the model inside the request, so large batches take a while. Two simultaneous requests for the same lesson do not see each other's new questions and could add similar ones.

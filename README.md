@@ -2,7 +2,7 @@
 
 Upload photos of textbook pages and get tests generated from them. A vision model extracts the text, the text is chunked and embedded into Qdrant, and the app generates multiple-choice and free-text questions. You take a test, answers are graded (free-text by an LLM), and every attempt is stored so you can replay it later.
 
-Backend: FastAPI + SQLite + Qdrant + OpenAI (`backend/`). Frontend: Next.js + React + Tailwind (`frontend/`).
+Backend: FastAPI + SQLite + Qdrant + OpenAI (`backend/`). Frontend: Next.js + React + Tailwind (`frontend/`). Diagrams of the full flow are in [docs/architecture.md](docs/architecture.md).
 
 ## Prerequisites
 

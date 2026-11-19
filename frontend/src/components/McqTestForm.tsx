@@ -33,11 +33,14 @@ export function McqTestForm({ questions, onSubmit, busy }: Props) {
         onSubmit(answers);
       }}
     >
-      {questions.map((q) => {
+      {questions.map((q, i) => {
         const multi = q.type === "mcq_multi";
         return (
           <fieldset key={q.id} className="space-y-2 rounded border p-4">
-            <legend className="px-1 font-medium">{q.question_text}</legend>
+            <legend className="px-1 font-medium">
+              <span className="mr-2 font-semibold text-blue-700">Question {i + 1}.</span>{" "}
+              {q.question_text}
+            </legend>
             {multi && (
               <p className="text-sm text-gray-500">Select all that apply.</p>
             )}

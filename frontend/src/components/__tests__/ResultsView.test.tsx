@@ -34,6 +34,8 @@ test("MCQ: score line, verdict badges, correct answer and explanation", () => {
   expect(screen.getByText("Picked two")).toBeInTheDocument();
   expect(screen.getByText("(no selection)")).toBeInTheDocument();
   expect(container.textContent).not.toMatch(/\b(10|20|30)\b/);
+  expect(screen.getByText("Question 1.")).toBeInTheDocument();
+  expect(screen.getByText("Question 3.")).toBeInTheDocument();
 });
 
 test("free text: shows the student's answer and Feedback label", () => {
@@ -51,4 +53,5 @@ test("free text: shows the student's answer and Feedback label", () => {
   expect(screen.getByText("Feedback:")).toBeInTheDocument();
   expect(screen.queryByText("Explanation:")).not.toBeInTheDocument();
   expect(screen.getByText("Well done")).toBeInTheDocument();
+  expect(screen.queryByText(/^Question \d+\.$/)).not.toBeInTheDocument();
 });

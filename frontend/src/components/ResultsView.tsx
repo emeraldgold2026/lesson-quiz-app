@@ -25,10 +25,15 @@ export function ResultsView({ attempt }: { attempt: Attempt }) {
       <h3 className="text-lg font-semibold">
         Score: {attempt.score} / {attempt.total_questions}
       </h3>
-      {attempt.results.map((r) => (
+      {attempt.results.map((r, i) => (
         <div key={r.question_id} className="space-y-2 rounded border p-4">
           <div className="flex items-start justify-between gap-3">
-            <p className="font-medium">{r.question_text}</p>
+            <p className="font-medium">
+              {!freeText && (
+                <span className="mr-2 font-semibold text-blue-700">Question {i + 1}.</span>
+              )}{" "}
+              {r.question_text}
+            </p>
             <VerdictBadge result={r} />
           </div>
           <div>

@@ -21,6 +21,16 @@ test("radio for single, checkbox for multi; submit gated and sends selections", 
   expect(onSubmit).toHaveBeenCalledWith({ 1: [11], 2: [20, 21] });
 });
 
+test("questions are numbered in display order", () => {
+  const qs: McqQuestion[] = [
+    { id: 41, type: "mcq_single", question_text: "First?", choices: [{ id: 1, text: "A" }] },
+    { id: 7, type: "mcq_single", question_text: "Second?", choices: [{ id: 2, text: "B" }] },
+  ];
+  render(<McqTestForm questions={qs} onSubmit={vi.fn()} busy={false} />);
+  expect(screen.getByRole("group", { name: "Question 1. First?" })).toBeInTheDocument();
+  expect(screen.getByRole("group", { name: "Question 2. Second?" })).toBeInTheDocument();
+});
+
 test("submit stays disabled while busy", async () => {
   const qs: McqQuestion[] = [
     { id: 1, type: "mcq_single", question_text: "Q1", choices: [{ id: 10, text: "A" }] },

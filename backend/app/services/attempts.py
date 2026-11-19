@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.clients.protocols import AIClient, VectorStore
 from app.models import Attempt, AttemptAnswer, Lesson, Question
-from app.schemas import AnswerResultOut, AttemptOut, AttemptSummaryOut, FreeTextVerdict
+from app.schemas import AnswerResultOut, AttemptOut, AttemptSummaryOut, FreeTextVerdict, McqCheckOut
 from app.services.grading import grade_free_text, grade_mcq, points
 
 GRADING_WORKERS = 8  # concurrent LLM grading calls per free-text submission
@@ -28,6 +28,23 @@ def _check_keys(questions: list[Question], answers: dict) -> None:
     expected = {q.id for q in questions}
     if set(answers) != expected:
         raise SubmissionError(f"answers must cover exactly question ids {sorted(expected)}")
+
+
+def check_mcq_answer(lesson: Lesson, question_id: int, selected: list[int]) -> McqCheckOut:
+    """Grade one MCQ answer for instant feedback. Stores nothing; the attempt is saved on submit."""
+    question = next((q for q in questions_for(lesson, "mcq") if q.id == question_id), None)
+    if question is None:
+        raise SubmissionError(f"question {question_id} is not an MCQ of this lesson")
+    chosen = set(selected)
+    valid = {c.id for c in question.choices}
+    if not chosen <= valid:
+        raise SubmissionError(f"choices {sorted(chosen - valid)} do not belong to question {question_id}")
+    correct = [c for c in question.choices if c.is_correct]
+    return McqCheckOut(
+        verdict=grade_mcq({c.id for c in correct}, chosen),
+        correct_choice_ids=[c.id for c in correct],
+        correct_answer_text="; ".join(c.choice_text for c in correct),
+        explanation=question.explanation)
 
 
 def submit_mcq(session: Session, lesson: Lesson, answers: dict[int, list[int]]) -> Attempt:

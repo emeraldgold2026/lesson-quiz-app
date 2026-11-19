@@ -2,7 +2,7 @@
 
 import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { getMcqTest, submitMcqTest } from "@/lib/api";
+import { checkMcqAnswer, getMcqTest, submitMcqTest } from "@/lib/api";
 import type { Attempt, McqQuestion } from "@/lib/types";
 import { McqTestForm } from "@/components/McqTestForm";
 import { ResultsView } from "@/components/ResultsView";
@@ -67,7 +67,14 @@ export default function McqTestPage({ params }: PageProps<"/lessons/[id]/mcq-tes
           </div>
         </div>
       ) : (
-        questions && <McqTestForm questions={questions} onSubmit={(a) => void handleSubmit(a)} busy={busy} />
+        questions && (
+          <McqTestForm
+            questions={questions}
+            onCheck={(questionId, selected) => checkMcqAnswer(id, questionId, selected)}
+            onSubmit={(a) => void handleSubmit(a)}
+            busy={busy}
+          />
+        )
       )}
     </div>
   );

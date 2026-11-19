@@ -4,10 +4,11 @@ from sqlalchemy.orm import Session
 from app.deps import get_ai, get_session, get_store
 from app.models import Lesson
 from app.schemas import (AttemptOut, ChoiceOut, FreeTextQuestionOut, FreeTextSubmit,
-                         McqQuestionOut, McqSubmit, MoreQuestionsOut, MoreQuestionsRequest)
+                         McqCheckOut, McqCheckRequest, McqQuestionOut, McqSubmit, MoreQuestionsOut,
+                         MoreQuestionsRequest)
 from app.services.generation import append_questions, plan_more_questions
 from app.services.attempts import (GradingUnavailable, SubmissionError, attempt_out,
-                                   questions_for, submit_free_text, submit_mcq)
+                                   check_mcq_answer, questions_for, submit_free_text, submit_mcq)
 
 router = APIRouter(prefix="/lessons", tags=["tests"])
 
@@ -29,6 +30,15 @@ def mcq_test(lesson_id: int, session: Session = Depends(get_session)):
     return [McqQuestionOut(id=q.id, type=q.type, question_text=q.question_text,
                            choices=[ChoiceOut(id=c.id, text=c.choice_text) for c in q.choices])
             for q in questions_for(lesson, "mcq")]
+
+
+@router.post("/{lesson_id}/mcq-test/check", response_model=McqCheckOut)
+def mcq_check(lesson_id: int, body: McqCheckRequest, session: Session = Depends(get_session)):
+    lesson = _ready_lesson(session, lesson_id, "mcq")
+    try:
+        return check_mcq_answer(lesson, body.question_id, body.selected)
+    except SubmissionError as e:
+        raise HTTPException(422, str(e)) from e
 
 
 @router.post("/{lesson_id}/mcq-test/submit", response_model=AttemptOut)

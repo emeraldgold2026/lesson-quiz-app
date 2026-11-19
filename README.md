@@ -61,8 +61,10 @@ cd frontend && npm test
 2. A vision model extracts the text from each page.
 3. The text is chunked and embedded into Qdrant.
 4. Multiple-choice and free-text questions are generated from the chunks.
-5. You take a test; answers are graded and the attempt is stored in SQLite.
+5. You take a test; answers are graded and the attempt is stored in SQLite. MCQs are shown one at a time: submitting an answer gives instant feedback (right or wrong, the correct answer and the reasoning) before the next question, and the finished test is saved as one attempt. Free-text tests are answered all at once.
 6. From the lesson page you can generate more MCQ or free-text questions (1–20 at a time) at any point.
+
+`POST /lessons/{id}/mcq-test/check` with `{"question_id", "selected": [choice ids]}` grades one MCQ answer and returns the verdict, the correct choice ids, the correct answer text and the explanation. It stores nothing; the attempt is saved when the whole test is submitted.
 
 ### Generating more questions
 

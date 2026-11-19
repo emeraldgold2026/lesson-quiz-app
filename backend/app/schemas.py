@@ -68,6 +68,18 @@ class McqSubmit(BaseModel):
     answers: dict[int, list[int]]  # question_id -> selected choice ids
 
 
+class McqCheckRequest(BaseModel):
+    question_id: int
+    selected: list[int]  # selected choice ids
+
+
+class McqCheckOut(BaseModel):
+    verdict: Literal["correct", "incorrect"]
+    correct_choice_ids: list[int]
+    correct_answer_text: str
+    explanation: str
+
+
 class FreeTextSubmit(BaseModel):
     answers: dict[int, str]
 

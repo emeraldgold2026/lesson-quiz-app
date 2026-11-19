@@ -51,7 +51,8 @@ MCQs are graded by a rule, free-text answers by an LLM judge.
 flowchart LR
     subgraph MCQ["MCQ test · graded in code, no LLM"]
         direction LR
-        M1["Submit<br/>all answers at once"] --> M2["Grade<br/>selected set must equal<br/>the correct set"] --> M3["Score<br/>correct 1 · wrong 0"] --> M4[("Save attempt<br/>answers, verdicts,<br/>explanations")] --> M5["Results<br/>correct choices and<br/>the stored reasoning"]
+        M1["One question at a time<br/>student submits an answer"] --> M2["Check<br/>POST /mcq-test/check<br/>selected set must equal<br/>the correct set"] --> M3["Instant feedback<br/>right or wrong, correct<br/>answer, stored reasoning"] --> M4[("Finish test<br/>submit all answers:<br/>save one attempt")] --> M5["Results<br/>score and full review"]
+        M3 -.->|"next question"| M1
     end
 
     subgraph FT["Free-text test · graded by an LLM against the stored reference answer"]

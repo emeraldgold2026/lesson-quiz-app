@@ -22,6 +22,13 @@ export interface FreeTextQuestion {
   question_text: string;
 }
 
+export interface McqCheckResult {
+  verdict: "correct" | "incorrect";
+  correct_choice_ids: number[];
+  correct_answer_text: string;
+  explanation: string;
+}
+
 export interface AnswerResult {
   question_id: number;
   question_text: string;

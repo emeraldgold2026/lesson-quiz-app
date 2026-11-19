@@ -37,6 +37,31 @@ def test_mcq_submit_grades_and_persists(make_client, session_factory, fake_store
     assert len(c.get(f"/lessons/{lid}/attempts").json()) == 1
 
 
+def test_mcq_check_gives_instant_feedback_and_stores_nothing(make_client, session_factory, fake_store, tmp_path):
+    c, _, lid = ready(make_client, session_factory, fake_store, tmp_path)
+    q = c.get(f"/lessons/{lid}/mcq-test").json()[0]
+    right, wrong = q["choices"][0]["id"], q["choices"][1]["id"]  # fake: first choice is correct
+    ok = c.post(f"/lessons/{lid}/mcq-test/check", json={"question_id": q["id"], "selected": [right]})
+    assert ok.status_code == 200
+    assert ok.json() == {"verdict": "correct", "correct_choice_ids": [right],
+                         "correct_answer_text": "right", "explanation": "because"}
+    bad = c.post(f"/lessons/{lid}/mcq-test/check", json={"question_id": q["id"], "selected": [wrong]}).json()
+    assert bad["verdict"] == "incorrect" and bad["correct_choice_ids"] == [right]
+    both = c.post(f"/lessons/{lid}/mcq-test/check", json={"question_id": q["id"], "selected": [right, wrong]})
+    assert both.json()["verdict"] == "incorrect"  # exact-set rule, same as submit
+    assert c.get(f"/lessons/{lid}/attempts").json() == []
+
+
+def test_mcq_check_rejects_unknown_question_and_foreign_choices(make_client, session_factory, fake_store, tmp_path):
+    c, _, lid = ready(make_client, session_factory, fake_store, tmp_path)
+    q = c.get(f"/lessons/{lid}/mcq-test").json()[0]
+    free = c.get(f"/lessons/{lid}/free-text-test").json()[0]
+    assert c.post(f"/lessons/{lid}/mcq-test/check", json={"question_id": 999999, "selected": []}).status_code == 422
+    assert c.post(f"/lessons/{lid}/mcq-test/check", json={"question_id": free["id"], "selected": []}).status_code == 422
+    assert c.post(f"/lessons/{lid}/mcq-test/check", json={"question_id": q["id"], "selected": [999999]}).status_code == 422
+    assert c.post("/lessons/999/mcq-test/check", json={"question_id": 1, "selected": []}).status_code == 404
+
+
 def test_mcq_submit_rejects_missing_or_foreign_choices(make_client, session_factory, fake_store, tmp_path):
     c, _, lid = ready(make_client, session_factory, fake_store, tmp_path)
     qs = c.get(f"/lessons/{lid}/mcq-test").json()

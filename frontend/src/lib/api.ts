@@ -3,6 +3,7 @@ import type {
   AttemptSummary,
   FreeTextQuestion,
   Lesson,
+  McqCheckResult,
   McqQuestion,
 } from "./types";
 
@@ -56,7 +57,12 @@ export const retryLesson = (id: number) =>
 
 export const getMcqTest = (id: number) =>
   request<McqQuestion[]>(`/lessons/${id}/mcq-test`);
-export const submitMcqTest = (id: number, answers: Record<number, number[]>) =>
+export const checkMcqAnswer = (id: number, questionId: number, selected: number[]) =>
+  postJson<McqCheckResult>(`/lessons/${id}/mcq-test/check`, {
+    question_id: questionId,
+    selected,
+  });
+export const submitMcqTest =(id: number, answers: Record<number, number[]>) =>
   postJson<Attempt>(`/lessons/${id}/mcq-test/submit`, { answers });
 
 export const getFreeTextTest = (id: number) =>
